@@ -45,11 +45,12 @@ type (
 
 	// trees traversing
 	iterator struct {
-		cursor int
-		path   []int
-		label  string
-		items  []interface{}
-		params map[string]interface{} // only for rendering,
+		cursor     int
+		path       []int
+		label      string
+		items      []interface{}
+		paramsType string      // only for rendering,
+		params     interface{} // []map[string]interface{} or map[string]interface{} // only for rendering,
 	}
 
 	// rules
@@ -113,6 +114,11 @@ type (
 	}
 )
 
+const auto = "__auto__"
+
+func Auto() string { // is for templates that have no key for params, but the params will be passed automatically (with Repeat() for example)
+	return auto
+}
 func Tag(n string, attrs TagAttributes, content TagContent) interface{} {
 	return tag{
 		name:           n,
@@ -214,6 +220,8 @@ var selfClosingTags = []string{
 }
 
 const DOCTYPE = "<!DOCTYPE html>"
+const paramsTypeMap = "map"
+const paramsTypeSlice = "slice"
 
 func selfClosingTag(n string) bool {
 	for _, t := range selfClosingTags {
@@ -231,13 +239,24 @@ func newIterator(path []int, label string, items []interface{}) *iterator {
 		items:  items,
 	}
 }
-func newIteratorWithParams(path []int, label string, items []interface{}, params map[string]interface{}) *iterator {
+func newIteratorWithParamsMap(path []int, label string, items []interface{}, params map[string]interface{}) *iterator {
 	return &iterator{
-		cursor: -1,
-		path:   path,
-		label:  label,
-		items:  items,
-		params: params,
+		cursor:     -1,
+		path:       path,
+		label:      label,
+		items:      items,
+		params:     params,
+		paramsType: paramsTypeMap,
+	}
+}
+func newIteratorWithParamsSlice(path []int, label string, items []interface{}, params []map[string]interface{}) *iterator {
+	return &iterator{
+		cursor:     -1,
+		path:       path,
+		label:      label,
+		items:      items,
+		params:     params,
+		paramsType: paramsTypeSlice,
 	}
 }
 func (iter *iterator) next() interface{} {
@@ -247,6 +266,16 @@ func (iter *iterator) next() interface{} {
 		return iter.items[iter.cursor]
 	}
 	return nil
+}
+func (iter *iterator) getParams() map[string]interface{} {
+	switch iter.paramsType {
+	case paramsTypeMap:
+		return iter.params.(map[string]interface{})
+	case paramsTypeSlice:
+		return iter.params.([]map[string]interface{})[iter.cursor]
+	default:
+		panic("wrong params type") // can't occur
+	}
 }
 
 // New() creates new Limbo object for dirty templates spec.
@@ -283,21 +312,36 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			name: lt.name,
 		}
 		fragments := []interface{}{}
-		ri := newIterator([]int{}, "top", []interface{}(lt.content.(documentContent)))
+		var topContent []interface{}
+		switch rawTopContent := lt.content.(type) {
+		case documentContent:
+			topContent = []interface{}(rawTopContent)
+			// todo: add check for doctype
+		case TagContent:
+			// todo: add check for only tag content (no doctype or attributes)
+			topContent = []interface{}(rawTopContent)
+		case TagAttributes:
+			// todo: add check for only tag attribures (no doctype or tag content)
+			topContent = []interface{}(rawTopContent)
+		default:
+			r.Error("wrong type of top content rule, expected: documentContent, TagContent, TagAttributes")
+			return nil, r
+		}
+		iter := newIterator([]int{}, "top", topContent)
 		traverse := true
 		for traverse {
-			rule := ri.next()
+			rule := iter.next()
 			//fragments = appendFragments(fragments, rule)
 			switch fragment := rule.(type) {
 			case theEnd:
 				traverse = false // stops the loop because rules tree traversing is finished
 			case jump:
-				ri = fragment.iterator
+				iter = fragment.iterator
 				continue
 			case doctype:
 				fragments = appendFragments(fragments, DOCTYPE)
 			case tag:
-				fmt.Printf("\ntag: %s\n", fragment.name)
+				fmt.Printf("\ntag: %s,\n\tattrs: %#v\n\tcontent: %#v \n", fragment.name, fragment.attributesRule, fragment.contentRule)
 				fragments = appendFragments(fragments, fmt.Sprintf("<%s", fragment.name))
 				// for tag we flatten attributes and content rule into a single list of rules
 				// because of that tagAttributes and tagContent rules are ignored, but not their content.
@@ -315,12 +359,13 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 					}
 					rules = append(rules, tagClosing{fragment.name})
 				}
-				if len(ri.path) > 0 {
-					rules = append(rules, jump{iterator: ri}) // allows to jump to the parrent's sibling at the end
+				if len(iter.path) > 0 {
+					rules = append(rules, jump{iterator: iter}) // allows to jump to the parrent's sibling at the end
 				} else {
 					rules = append(rules, theEnd{})
 				}
-				ri = newIterator(append(ri.path, ri.cursor), fmt.Sprintf("<%s>", fragment.name), rules)
+				fmt.Printf("\t\trules: %#v", rules)
+				iter = newIterator(append(iter.path, iter.cursor), fmt.Sprintf("<%s>", fragment.name), rules)
 			case tagEnd:
 				fragments = appendFragments(fragments, ">")
 			case tagClosing:
@@ -328,9 +373,9 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			case tagSelfClosing:
 				fragments = appendFragments(fragments, "/>")
 			case TagAttributes: // not achievable if tagAttributes is within tagRule because of flattening
-				ri = newIterator(append(ri.path, ri.cursor), "attrs", append([]interface{}(fragment), jump{iterator: ri}))
+				iter = newIterator(append(iter.path, iter.cursor), "attrs", append([]interface{}(fragment), jump{iterator: iter}))
 			case TagContent: // not achievable if tagContent is within tagRule because of flattening
-				ri = newIterator(append(ri.path, ri.cursor), "content", append([]interface{}(fragment), jump{iterator: ri}))
+				iter = newIterator(append(iter.path, iter.cursor), "content", append([]interface{}(fragment), jump{iterator: iter}))
 			case attribute:
 				fragments = appendFragments(
 					fragments,
@@ -349,7 +394,7 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 				}
 				fragments = appendFragments(fragments, text)
 			case textInjection:
-
+				fragments = appendFragments(fragments, fragment)
 			case templatePlacement:
 				exists := false
 				for _, lt := range l.templates {
@@ -370,9 +415,9 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			case variant:
 				fragments = appendFragments(fragments, fragment)
 			case documentContent:
-				ri = newIterator(append(ri.path, ri.cursor), "document content", []interface{}(fragment))
+				iter = newIterator(append(iter.path, iter.cursor), "document content", []interface{}(fragment))
 			default:
-				r.Error("wrong rule %#v, iterator: %#v", rule, ri)
+				r.Error("wrong rule %#v, iterator: %#v", rule, iter)
 				return
 			}
 		}
@@ -419,7 +464,7 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 		return "", r
 	}
 	var sb strings.Builder
-	iter := newIteratorWithParams([]int{}, "top", t.fragments, params)
+	iter := newIteratorWithParamsMap([]int{}, "top", t.fragments, params)
 	traverse := true
 	for traverse {
 		rawFragment := iter.next()
@@ -432,7 +477,11 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 			sb.WriteString(f)
 		case templatePlacement:
 			tPl := u.templates[f.name]
-			iter = newIteratorWithParams(append(iter.path, iter.cursor), "template placement", append(tPl.fragments, jump{iterator: iter}), params)
+			if f.key == auto { // when rendering within repeatable rule
+				iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template placement", append(tPl.fragments[:len(tPl.fragments)-1], jump{iterator: iter}), iter.getParams())
+			} else {
+				iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template placement", append(tPl.fragments[:len(tPl.fragments)-1], jump{iterator: iter}), iter.getParams()[f.key].(map[string]interface{}))
+			}
 		case templateInjection:
 			_data, exists := params[f.key]
 			if !exists {
@@ -468,11 +517,11 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 				r.Error("template \"%s\" for injection doesn't exist", t.name)
 				return "", r
 			}
-			iter = newIteratorWithParams(append(iter.path, iter.cursor), "template injection", append(injT.fragments, jump{iterator: iter}), injParams)
+			iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template injection", append(injT.fragments, jump{iterator: iter}), injParams)
 		case attributeInjection:
-			_v, exists := params[f.key]
+			_v, exists := iter.getParams()[f.key]
 			if !exists {
-				r.Error("attribute value injection \"%s\" not provided", f.key)
+				r.Error("attribute value injection \"%s\" not provided %#v", f.key)
 				return "", r
 			}
 			v, ok := _v.(string)
@@ -482,7 +531,7 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 			}
 			sb.WriteString(v)
 		case textInjection:
-			_v, exists := params[f.key]
+			_v, exists := iter.getParams()[f.key]
 			if !exists {
 				r.Error("text injection \"%s\" not provided", f.key)
 				return "", r
@@ -496,6 +545,33 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 				v = safeTextReplacer.Replace(v)
 			}
 			sb.WriteString(v)
+		case repeatable:
+			rawRepParams, ok := iter.getParams()[f.key]
+			if !ok {
+				r.Error("repeatable params are not provided")
+				return "", r
+			}
+			repParams, ok := rawRepParams.([]map[string]interface{})
+			if !ok {
+				r.Error("repeatable params should be of type []map[string]interface{}")
+				return "", nil
+			}
+			fmt.Printf("\n\nrepeatable params: %#v\n", repParams)
+			rules := []interface{}{}
+			for range repParams {
+				rules = append(rules, f.rule)
+			}
+			rules = append(rules, jump{iterator: iter})
+			fmt.Printf("\n\nrepeatable rules: %#v\n", rules)
+
+			iter = newIteratorWithParamsSlice(
+				append(iter.path, iter.cursor),
+				"repeatable",
+				rules,
+				repParams)
+		default:
+			r.Error("wrong type of fragment %#v", f)
+			return "", r
 		}
 	}
 	return sb.String(), r
