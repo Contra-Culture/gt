@@ -71,7 +71,8 @@ var _ = Describe("gt", func() {
 								Repeat(
 									"articles",
 									TemplatePlacement("/card/article", Auto()),
-								)))))))
+								),
+								TemplateInjection("bottom")))))))
 		limbo.Template(
 			"/card/article",
 			Content(
@@ -100,6 +101,16 @@ var _ = Describe("gt", func() {
 								AttrInjection("href", "article-link")),
 							Content(
 								TextInj("article-link-anchor")))))))
+		limbo.Template(
+			"/btn/mailme",
+			Content(
+				Tag(
+					"a",
+					Attributes(
+						Attr("class", "mailme-btn"),
+						AttrInjection("href", "mailme-mailto"),
+					),
+					Content(TextInj("mailme-text")))))
 		// creates universe
 		univ, r := limbo.Universe()
 		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000001Z] universe\n"))
@@ -108,6 +119,13 @@ var _ = Describe("gt", func() {
 		rendered, r := univ.Render(
 			"/layout/test",
 			map[string]interface{}{
+				"bottom": map[string]interface{}{
+					"name": "/btn/mailme",
+					"params": map[string]interface{}{
+						"mailme-mailto": "mailto:egotraumatic@example.com",
+						"mailme-text":   "Mail me",
+					},
+				},
 				"articles": []map[string]interface{}{
 					{
 						"article-title":       "Article 1",
@@ -123,6 +141,6 @@ var _ = Describe("gt", func() {
 					},
 				}})
 		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000002Z] rendering template \"/layout/test\"\n"))
-		Expect(rendered).To(Equal("<!DOCTYPE html><html><head><title>::Test Template::</title><meta charset=\"utf-8\"/></head><body><header class=\"top-header\"><h1 class=\"top-header-title\">Test Header!</h1></header><div class=\"article-card\"><h1 class=\"article-card-title\">Article 1</h1><span class=\"article-card-preview\">Preview for article 1.</span><a class=\"article-card-link\" href=\"http://google.com\">google</a></div><div class=\"article-card\"><h1 class=\"article-card-title\">Article 2</h1><span class=\"article-card-preview\">Preview for article 2.</span><a class=\"article-card-link\" href=\"http://yahoo.com\">yahoo!</a></div></body></html>"))
+		Expect(rendered).To(Equal("<!DOCTYPE html><html><head><title>::Test Template::</title><meta charset=\"utf-8\"/></head><body><header class=\"top-header\"><h1 class=\"top-header-title\">Test Header!</h1></header><div class=\"article-card\"><h1 class=\"article-card-title\">Article 1</h1><span class=\"article-card-preview\">Preview for article 1.</span><a class=\"article-card-link\" href=\"http://google.com\">google</a></div><div class=\"article-card\"><h1 class=\"article-card-title\">Article 2</h1><span class=\"article-card-preview\">Preview for article 2.</span><a class=\"article-card-link\" href=\"http://yahoo.com\">yahoo!</a></div><a class=\"mailme-btn\" href=\"mailto:egotraumatic@example.com\">Mail me</a></body></html>"))
 	})
 })

@@ -180,7 +180,7 @@ func TemplatePlacement(n, k string) interface{} {
 		key:  k,
 	}
 }
-func TemplateInjection(n, k string) interface{} {
+func TemplateInjection(k string) interface{} {
 	return templateInjection{
 		key: k,
 	}
@@ -517,7 +517,7 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 				r.Error("template \"%s\" for injection doesn't exist", t.name)
 				return "", r
 			}
-			iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template injection", append(injT.fragments, jump{iterator: iter}), injParams)
+			iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template injection", append(injT.fragments[:len(injT.fragments)-1], jump{iterator: iter}), injParams)
 		case attributeInjection:
 			_v, exists := iter.getParams()[f.key]
 			if !exists {
