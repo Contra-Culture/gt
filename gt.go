@@ -100,8 +100,8 @@ type (
 		rule interface{}
 	}
 	variant struct { // allows to place one or another of the predefined variants, for example: text or tag, depending on the key provided by params object on template rendering
-		defaultRule interface{} // use __default key to provide data to the default rule. default rule is mandatory, but you can avoid rendering of anything with nothing rule.
-		rules       map[string]interface{}
+		defaultTemplateName string // use __default key to provide data to the default rule. default rule is mandatory, but you can avoid rendering of anything with nothing rule.
+		templates           map[string]string
 	}
 	nothing struct { // allows to place nothing, makes sense only as a direct child of variant rule.
 		nothing interface{}
@@ -115,6 +115,7 @@ type (
 )
 
 const auto = "__auto__"
+const defaultVariantKey = "__default__"
 
 func Auto() string { // is for templates that have no key for params, but the params will be passed automatically (with Repeat() for example)
 	return auto
@@ -191,10 +192,10 @@ func Repeat(k string, r interface{}) interface{} {
 		rule: r,
 	}
 }
-func Variant(variants map[string]interface{}, dr interface{}) interface{} {
+func Variant(dr string, variants map[string]string) interface{} {
 	return variant{
-		defaultRule: dr,
-		rules:       variants,
+		defaultTemplateName: dr,
+		templates:           variants,
 	}
 }
 func Nothing() interface{} {
@@ -261,7 +262,7 @@ func newIteratorWithParamsSlice(path []int, label string, items []interface{}, p
 }
 func (iter *iterator) next() interface{} {
 	iter.cursor = iter.cursor + 1
-	fmt.Printf("\n\nnext(): %#v : %d/%d : %#v\n\n", iter.path, iter.cursor, len(iter.items), iter.items[iter.cursor])
+	fmt.Printf("\n\nnext(): %#v : %d/%d : %#v {all: %#v}\n\n", iter.path, iter.cursor, len(iter.items), iter.items[iter.cursor], iter.items)
 	if iter.cursor < len(iter.items) {
 		return iter.items[iter.cursor]
 	}
@@ -284,15 +285,26 @@ func New(rc func(string, ...interface{}) report.Node) *Limbo {
 }
 
 func (l *Limbo) Template(n string, rule interface{}) {
-	switch rule.(type) {
-	case TagAttributes, TagContent, documentContent:
+	switch r := rule.(type) {
+	case TagAttributes:
 		l.templates = append(l.templates, LimboTemplate{
 			name:    n,
-			content: rule,
+			content: TagAttributes(append([]interface{}(r), theEnd{theEnd: true})),
+		})
+	case TagContent:
+		l.templates = append(l.templates, LimboTemplate{
+			name:    n,
+			content: TagContent(append([]interface{}(r), theEnd{theEnd: true})),
+		})
+	case documentContent:
+		l.templates = append(l.templates, LimboTemplate{
+			name:    n,
+			content: documentContent(append([]interface{}(r), theEnd{theEnd: true})),
 		})
 	default:
 		panic(fmt.Sprintf("wrong rule for template content: `%#v`", rule))
 	}
+	fmt.Printf("\ntemplate added %#v\n", l.templates[len(l.templates)-1])
 }
 
 // *Limbo.Universe() generates templating universe, which is the entity point to work with templates at the application runtime.
@@ -304,6 +316,7 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 	}
 	// go through limbo template to prepare final (universe) templates
 	for _, lt := range l.templates {
+		fmt.Printf("\n>>>universe template preparation: %s, %#v\n", lt.name, lt.content)
 		if _, exists := u.templates[lt.name]; exists {
 			r.Error("template \"%s\" already specified", lt.name)
 			continue
@@ -324,7 +337,7 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			// todo: add check for only tag attribures (no doctype or tag content)
 			topContent = []interface{}(rawTopContent)
 		default:
-			r.Error("wrong type of top content rule, expected: documentContent, TagContent, TagAttributes")
+			r.Error("wrong type of top content rule, expected: documentContent, TagContent, TagAttributes %#v", fragments)
 			return nil, r
 		}
 		iter := newIterator([]int{}, "top", topContent)
@@ -359,11 +372,7 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 					}
 					rules = append(rules, tagClosing{fragment.name})
 				}
-				if len(iter.path) > 0 {
-					rules = append(rules, jump{iterator: iter}) // allows to jump to the parrent's sibling at the end
-				} else {
-					rules = append(rules, theEnd{})
-				}
+				rules = append(rules, jump{iterator: iter}) // allows to jump to the parrent's sibling at the end
 				fmt.Printf("\t\trules: %#v", rules)
 				iter = newIterator(append(iter.path, iter.cursor), fmt.Sprintf("<%s>", fragment.name), rules)
 			case tagEnd:
@@ -373,9 +382,11 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			case tagSelfClosing:
 				fragments = appendFragments(fragments, "/>")
 			case TagAttributes: // not achievable if tagAttributes is within tagRule because of flattening
-				iter = newIterator(append(iter.path, iter.cursor), "attrs", append([]interface{}(fragment), jump{iterator: iter}))
+				iter = newIterator(append(iter.path, iter.cursor), "attrs", []interface{}(fragment))
 			case TagContent: // not achievable if tagContent is within tagRule because of flattening
-				iter = newIterator(append(iter.path, iter.cursor), "content", append([]interface{}(fragment), jump{iterator: iter}))
+				// iter = newIterator(append(iter.path, iter.cursor), "content", append([]interface{}(fragment), jump{iterator: iter}))
+				fmt.Printf("\n\tuniverse template prep2: %#v : %#v\n", fragment, iter)
+				iter = newIterator(append(iter.path, iter.cursor), "content", []interface{}(fragment))
 			case attribute:
 				fragments = appendFragments(
 					fragments,
@@ -466,6 +477,7 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 	var sb strings.Builder
 	iter := newIteratorWithParamsMap([]int{}, "top", t.fragments, params)
 	traverse := true
+traverseLoop:
 	for traverse {
 		rawFragment := iter.next()
 		switch f := rawFragment.(type) {
@@ -478,9 +490,18 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 		case templatePlacement:
 			tPl := u.templates[f.name]
 			if f.key == auto { // when rendering within repeatable rule
-				iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template placement", append(tPl.fragments[:len(tPl.fragments)-1], jump{iterator: iter}), iter.getParams())
+				iter = newIteratorWithParamsMap(
+					append(iter.path, iter.cursor),
+					"template placement",
+					append(tPl.fragments[:len(tPl.fragments)-1], jump{iterator: iter}),
+					iter.getParams())
 			} else {
-				iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template placement", append(tPl.fragments[:len(tPl.fragments)-1], jump{iterator: iter}), iter.getParams()[f.key].(map[string]interface{}))
+				fmt.Printf("\n\t\t\tPARAMS: %s - %#v\n", f.name, iter.getParams()[f.key])
+				iter = newIteratorWithParamsMap(
+					append(iter.path, iter.cursor),
+					"template placement",
+					append(tPl.fragments[:len(tPl.fragments)-1], jump{iterator: iter}),
+					iter.getParams()[f.key].(map[string]interface{}))
 			}
 		case templateInjection:
 			_data, exists := params[f.key]
@@ -517,7 +538,11 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 				r.Error("template \"%s\" for injection doesn't exist", t.name)
 				return "", r
 			}
-			iter = newIteratorWithParamsMap(append(iter.path, iter.cursor), "template injection", append(injT.fragments[:len(injT.fragments)-1], jump{iterator: iter}), injParams)
+			iter = newIteratorWithParamsMap(
+				append(iter.path, iter.cursor),
+				"template injection",
+				append(injT.fragments[:len(injT.fragments)-1], jump{iterator: iter}),
+				injParams)
 		case attributeInjection:
 			_v, exists := iter.getParams()[f.key]
 			if !exists {
@@ -569,6 +594,29 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 				"repeatable",
 				rules,
 				repParams)
+		case variant:
+			for k, n := range f.templates {
+				fmt.Printf("\b\t\t\t~~~variant params: %#v\n", iter.getParams())
+				if _, ok := iter.getParams()[k]; ok {
+					iter = newIteratorWithParamsMap(
+						append(iter.path, 0),
+						"variant",
+						[]interface{}{
+							templatePlacement{name: n, key: k},
+							jump{iterator: iter},
+						},
+						iter.getParams())
+					continue traverseLoop
+				}
+			}
+			iter = newIteratorWithParamsMap(
+				append(iter.path, 0),
+				"variant",
+				[]interface{}{
+					templatePlacement{name: f.defaultTemplateName, key: Auto()},
+					jump{iterator: iter},
+				},
+				map[string]interface{}{})
 		default:
 			r.Error("wrong type of fragment %#v", f)
 			return "", r

@@ -100,7 +100,37 @@ var _ = Describe("gt", func() {
 								Attr("class", "article-card-link"),
 								AttrInjection("href", "article-link")),
 							Content(
-								TextInj("article-link-anchor")))))))
+								TextInj("article-link-anchor"))),
+						Variant("/comments/empty", map[string]string{"top-comments": "/comments/top"})))))
+		limbo.Template(
+			"/comments/empty",
+			Content(Text("no comments")))
+		limbo.Template(
+			"/comments/top",
+			Content(
+				Repeat("comments", TemplatePlacement("/card/comment", Auto()))))
+		limbo.Template(
+			"/card/comment",
+			Content(
+				Tag(
+					"div",
+					Attributes(
+						Attr("class", "comment-card")),
+					Content(
+						Tag(
+							"span",
+							Attributes(
+								Attr("class", "comment-card-author"),
+							),
+							Content(
+								TextInj("comment-author"))),
+						Tag(
+							"p",
+							Attributes(
+								Attr("class", "comment-card-text"),
+							),
+							Content(
+								TextInj("comment-text")))))))
 		limbo.Template(
 			"/btn/mailme",
 			Content(
@@ -132,6 +162,18 @@ var _ = Describe("gt", func() {
 						"article-preview":     "Preview for article 1.",
 						"article-link":        "http://google.com",
 						"article-link-anchor": "google",
+						"top-comments": map[string]interface{}{
+							"comments": []map[string]interface{}{
+								{
+									"comment-author": "Sam",
+									"comment-text":   "good article",
+								},
+								{
+									"comment-author": "John",
+									"comment-text":   "bullshit article",
+								},
+							},
+						},
 					},
 					{
 						"article-title":       "Article 2",
@@ -141,6 +183,6 @@ var _ = Describe("gt", func() {
 					},
 				}})
 		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000002Z] rendering template \"/layout/test\"\n"))
-		Expect(rendered).To(Equal("<!DOCTYPE html><html><head><title>::Test Template::</title><meta charset=\"utf-8\"/></head><body><header class=\"top-header\"><h1 class=\"top-header-title\">Test Header!</h1></header><div class=\"article-card\"><h1 class=\"article-card-title\">Article 1</h1><span class=\"article-card-preview\">Preview for article 1.</span><a class=\"article-card-link\" href=\"http://google.com\">google</a></div><div class=\"article-card\"><h1 class=\"article-card-title\">Article 2</h1><span class=\"article-card-preview\">Preview for article 2.</span><a class=\"article-card-link\" href=\"http://yahoo.com\">yahoo!</a></div><a class=\"mailme-btn\" href=\"mailto:egotraumatic@example.com\">Mail me</a></body></html>"))
+		Expect(rendered).To(Equal("<!DOCTYPE html><html><head><title>::Test Template::</title><meta charset=\"utf-8\"/></head><body><header class=\"top-header\"><h1 class=\"top-header-title\">Test Header!</h1></header><div class=\"article-card\"><h1 class=\"article-card-title\">Article 1</h1><span class=\"article-card-preview\">Preview for article 1.</span><a class=\"article-card-link\" href=\"http://google.com\">google</a><div class=\"comment-card\"><span class=\"comment-card-author\">Sam</span><p class=\"comment-card-text\">good article</p></div><div class=\"comment-card\"><span class=\"comment-card-author\">John</span><p class=\"comment-card-text\">bullshit article</p></div></div><div class=\"article-card\"><h1 class=\"article-card-title\">Article 2</h1><span class=\"article-card-preview\">Preview for article 2.</span><a class=\"article-card-link\" href=\"http://yahoo.com\">yahoo!</a>no comments</div><a class=\"mailme-btn\" href=\"mailto:egotraumatic@example.com\">Mail me</a></body></html>"))
 	})
 })
