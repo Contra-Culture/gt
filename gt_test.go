@@ -16,27 +16,28 @@ var _ = Describe("gt", func() {
 		Expect(err).NotTo(HaveOccurred())
 		limbo := New(report.ReportCreator(report.DumbTimer(now)))
 		Expect(limbo).NotTo(BeNil())
-		// limbo.Trait(
-		// 	"text/top-header",
-		// 	Prop("color", "red"),
-		// 	Prop("font-family", "Helvetica Neue", "Helvetica", "Arial", "sans-serif"),
-		// 	Prop("font-weight", "600"),
-		// )
-		// limbo.Trait(
-		// 	"text/main",
-		// 	Prop("color", "#000000"),
-		// 	Prop("font-size", "1em"),
-		// 	Prop("line-height", "1.6em"),
-		// )
-		// limbo.Trait(
-		// 	"/block/header",
-		// 	Prop("background", "#f5f6f7"),
-		// 	Prop("margin", "20px", "0", "20px", "0"),
-		// 	Prop("padding", "20px"),
-		// )
+		limbo.Trait(
+			"text/top-header",
+			[]string{"color", "red"},
+			[]string{"font-family", "Helvetica Neue", "Helvetica", "Arial", "sans-serif"},
+			[]string{"font-weight", "600"},
+		)
+		limbo.Trait(
+			"text/main",
+			[]string{"color", "#000000"},
+			[]string{"font-size", "1em"},
+			[]string{"line-height", "1.6em"},
+		)
+		limbo.Trait(
+			"/block/header",
+			[]string{"background", "#f5f6f7"},
+			[]string{"margin", "20px", "0", "20px", "0"},
+			[]string{"padding", "20px"},
+		)
 		limbo.Template(
 			"/layout/test",
-			DocumentContent(
+			WithStylesheet("main"),
+			WithLayout(
 				Doctype(),
 				Tag("html",
 					Attributes(),
@@ -60,13 +61,12 @@ var _ = Describe("gt", func() {
 								Tag(
 									"header",
 									Attributes(
-										Attr("class", "top-header"),
-									),
+										SemClass("top-header", UsesTraits("/block/header"))),
 									Content(
 										Tag(
 											"h1",
 											Attributes(
-												Attr("class", "top-header-title")),
+												SemClass("top-header-title", UsesTraits("text/top-header"))),
 											Content(Text("Test Header!"))))),
 								Repeat(
 									"articles",
@@ -75,7 +75,8 @@ var _ = Describe("gt", func() {
 								TemplateInjection("bottom")))))))
 		limbo.Template(
 			"/card/article",
-			Content(
+			WithStylesheet("main"),
+			WithContent(
 				Tag(
 					"div",
 					Attributes(
@@ -104,14 +105,17 @@ var _ = Describe("gt", func() {
 						Variant("/comments/empty", map[string]string{"top-comments": "/comments/top"})))))
 		limbo.Template(
 			"/comments/empty",
-			Content(Text("no comments")))
+			WithStylesheet("main"),
+			WithContent(Text("no comments")))
 		limbo.Template(
 			"/comments/top",
-			Content(
+			WithStylesheet("main"),
+			WithContent(
 				Repeat("comments", TemplatePlacement("/card/comment", Auto()))))
 		limbo.Template(
 			"/card/comment",
-			Content(
+			WithStylesheet("main"),
+			WithContent(
 				Tag(
 					"div",
 					Attributes(
@@ -133,7 +137,8 @@ var _ = Describe("gt", func() {
 								TextInj("comment-text")))))))
 		limbo.Template(
 			"/btn/mailme",
-			Content(
+			WithStylesheet("main"),
+			WithContent(
 				Tag(
 					"a",
 					Attributes(
@@ -143,9 +148,13 @@ var _ = Describe("gt", func() {
 					Content(TextInj("mailme-text")))))
 		// creates universe
 		univ, r := limbo.Universe()
-		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000001Z] universe\n"))
+		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000001Z] limbo\n\t#[2022-05-02T10:11:12.0000002Z] template \"/layout/test\"\n\t#[2022-05-02T10:11:12.0000003Z] template \"/card/article\"\n\t#[2022-05-02T10:11:12.0000004Z] template \"/comments/empty\"\n\t#[2022-05-02T10:11:12.0000005Z] template \"/comments/top\"\n\t#[2022-05-02T10:11:12.0000006Z] template \"/card/comment\"\n\t#[2022-05-02T10:11:12.0000007Z] template \"/btn/mailme\"\n\t#[2022-05-02T10:11:12.0000008Z] stylesheet \"main\" generation\n\t\t<info>[2022-05-02T10:11:12.0000009Z] trait generation \"/block/header\"\n\t\t<info>[2022-05-02T10:11:12.000001Z] trait generation \"text/top-header\"\n\t<info>[2022-05-02T10:11:12.0000009Z] stylesheet[ss] main:\n\n \n\n/* trait: /block/header */\n.top-header{\nbackground: #f5f6f7;\nmargin: 20px 0 20px 0;\npadding: 20px;\n}\n\n\n/* trait: text/top-header */\n.top-header-title{\ncolor: red;\nfont-family: Helvetica Neue Helvetica Arial sans-serif;\nfont-weight: 600;\n}\n\n"))
+		//#[2022-05-02T10:11:12.0000001Z] limbo\n\t#[2022-05-02T10:11:12.0000002Z] template \"/layout/test\"\n\t#[2022-05-02T10:11:12.0000003Z] template \"/card/article\"\n\t#[2022-05-02T10:11:12.0000004Z] template \"/comments/empty\"\n\t#[2022-05-02T10:11:12.0000005Z] template \"/comments/top\"\n\t#[2022-05-02T10:11:12.0000006Z] template \"/card/comment\"\n\t#[2022-05-02T10:11:12.0000007Z] template \"/btn/mailme\"\n
 		Expect(r.HasErrors()).To(BeFalse())
 		Expect(univ).NotTo(BeNil())
+		Expect(univ.Stylesheets()).NotTo(BeNil())
+		Expect(len(univ.Stylesheets())).To(Equal(1))
+		Expect(univ.Stylesheets()["main"]).To(Equal("\n\n/* trait: /block/header */\n.top-header{\nbackground: #f5f6f7;\nmargin: 20px 0 20px 0;\npadding: 20px;\n}\n\n\n/* trait: text/top-header */\n.top-header-title{\ncolor: red;\nfont-family: Helvetica Neue Helvetica Arial sans-serif;\nfont-weight: 600;\n}\n"))
 		rendered, r := univ.Render(
 			"/layout/test",
 			map[string]interface{}{
@@ -182,7 +191,7 @@ var _ = Describe("gt", func() {
 						"article-link-anchor": "yahoo!",
 					},
 				}})
-		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000002Z] rendering template \"/layout/test\"\n"))
+		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.000001Z] rendering template \"/layout/test\"\n"))
 		Expect(rendered).To(Equal("<!DOCTYPE html><html><head><title>::Test Template::</title><meta charset=\"utf-8\"/></head><body><header class=\"top-header\"><h1 class=\"top-header-title\">Test Header!</h1></header><div class=\"article-card\"><h1 class=\"article-card-title\">Article 1</h1><span class=\"article-card-preview\">Preview for article 1.</span><a class=\"article-card-link\" href=\"http://google.com\">google</a><div class=\"comment-card\"><span class=\"comment-card-author\">Sam</span><p class=\"comment-card-text\">good article</p></div><div class=\"comment-card\"><span class=\"comment-card-author\">John</span><p class=\"comment-card-text\">bullshit article</p></div></div><div class=\"article-card\"><h1 class=\"article-card-title\">Article 2</h1><span class=\"article-card-preview\">Preview for article 2.</span><a class=\"article-card-link\" href=\"http://yahoo.com\">yahoo!</a>no comments</div><a class=\"mailme-btn\" href=\"mailto:egotraumatic@example.com\">Mail me</a></body></html>"))
 	})
 })

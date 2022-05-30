@@ -2,6 +2,7 @@ package gt
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Contra-Culture/report"
@@ -9,34 +10,29 @@ import (
 
 type (
 	// styling
-	StyleTrait struct {
-		name         string
-		declarations []StyleDeclaration
-	}
-	StyleDeclaration []string
-	StyleRule        struct {
-		selectors    []string
-		declarations []StyleDeclaration
-	}
-	Stylesheet struct {
-		name  string
-		rules []StyleRule
-	}
-
+	StyleTrait       []StyleDeclaration // represents one or several CSS declarations
+	StyleDeclaration []string           // represents a single CSS declaration
+	TraitStyleRule   []string           // represents a single CSS rule
+	Stylesheet       map[string]TraitStyleRule
 	// limbo templating
 	LimboTemplate struct {
-		name    string
-		content interface{}
+		name           string
+		stylesheetName string
+		content        interface{}
+		rn             report.Node
 	}
 	Limbo struct {
 		reportCreator func(string, ...interface{}) report.Node
+		rn            report.Node
 		templates     []LimboTemplate
+		stylesheets   map[string]Stylesheet
+		traits        map[string]StyleTrait
 	}
-
 	// universe templating
 	Universe struct {
 		reportCreator func(string, ...interface{}) report.Node
 		templates     map[string]*Template
+		stylesheets   map[string]string
 	}
 	Template struct {
 		name      string
@@ -99,6 +95,13 @@ type (
 		key  string
 		rule interface{}
 	}
+	semClass struct {
+		name       string              // class base name
+		prefixed   bool                // if true - uses parent class name as a prefix with "-" separator
+		traitNames []string            // list of traits for the semantic class
+		modifiers  map[string][]string // modifier name -> trait names list
+
+	}
 	variant struct { // allows to place one or another of the predefined variants, for example: text or tag, depending on the key provided by params object on template rendering
 		defaultTemplateName string // use __default key to provide data to the default rule. default rule is mandatory, but you can avoid rendering of anything with nothing rule.
 		templates           map[string]string
@@ -115,7 +118,6 @@ type (
 )
 
 const auto = "__auto__"
-const defaultVariantKey = "__default__"
 
 func Auto() string { // is for templates that have no key for params, but the params will be passed automatically (with Repeat() for example)
 	return auto
@@ -150,6 +152,30 @@ func AttrInjection(n, k string) interface{} {
 		name: n,
 		key:  k,
 	}
+}
+func WithModifier(name string, traits ...string) func(*semClass) {
+	return func(sc *semClass) {
+		sc.modifiers[name] = traits
+	}
+}
+func UsesTraits(traitNames ...string) func(*semClass) {
+	return func(sc *semClass) {
+		sc.traitNames = append(sc.traitNames, traitNames...)
+	}
+}
+func Prefixed() func(*semClass) {
+	return func(sc *semClass) {
+		sc.prefixed = true
+	}
+}
+func SemClass(n string, opts ...func(*semClass)) interface{} {
+	sc := semClass{
+		name: n,
+	}
+	for _, opt := range opts {
+		opt(&sc)
+	}
+	return sc
 }
 func Text(t string) interface{} {
 	return text{
@@ -281,38 +307,97 @@ func (iter *iterator) getParams() map[string]interface{} {
 
 // New() creates new Limbo object for dirty templates spec.
 func New(rc func(string, ...interface{}) report.Node) *Limbo {
-	return &Limbo{reportCreator: rc}
+	return &Limbo{
+		reportCreator: rc,
+		rn:            rc("limbo"),
+		traits:        make(map[string]StyleTrait),
+		stylesheets:   make(map[string]Stylesheet),
+	}
 }
 
-func (l *Limbo) Template(n string, rule interface{}) {
-	switch r := rule.(type) {
-	case TagAttributes:
-		l.templates = append(l.templates, LimboTemplate{
-			name:    n,
-			content: TagAttributes(append([]interface{}(r), theEnd{theEnd: true})),
-		})
-	case TagContent:
-		l.templates = append(l.templates, LimboTemplate{
-			name:    n,
-			content: TagContent(append([]interface{}(r), theEnd{theEnd: true})),
-		})
-	case documentContent:
-		l.templates = append(l.templates, LimboTemplate{
-			name:    n,
-			content: documentContent(append([]interface{}(r), theEnd{theEnd: true})),
-		})
-	default:
-		panic(fmt.Sprintf("wrong rule for template content: `%#v`", rule))
+func WithLayout(content ...interface{}) func(*LimboTemplate) bool {
+	return func(t *LimboTemplate) bool {
+		if t.content != nil {
+			t.rn.Error("templete content already specified")
+			return false
+		}
+		t.content = documentContent(append(content, theEnd{theEnd: true}))
+		return true
 	}
+}
+func WithContent(content ...interface{}) func(*LimboTemplate) bool {
+	return func(t *LimboTemplate) bool {
+		if t.content != nil {
+			t.rn.Error("templete content already specified")
+			return false
+		}
+		t.content = TagContent(append(content, theEnd{theEnd: true}))
+		return true
+	}
+}
+func WithAttributes(attrs ...interface{}) func(*LimboTemplate) bool {
+	return func(t *LimboTemplate) bool {
+		if t.content != nil {
+			t.rn.Error("templete content already specified")
+			return false
+		}
+		t.content = TagAttributes(append(attrs, theEnd{theEnd: true}))
+		return true
+	}
+}
+func WithStylesheet(n string) func(*LimboTemplate) bool {
+	return func(t *LimboTemplate) bool {
+		if len(t.stylesheetName) > 0 {
+			t.rn.Error("template stylesheet already specified")
+			return false
+		}
+		t.stylesheetName = n
+		return true
+	}
+}
+func (l *Limbo) Trait(n string, declarations ...StyleDeclaration) {
+	if _, exists := l.traits[n]; exists {
+		l.rn.Error("trait \"%s\" already specified", n)
+		return
+	}
+	l.traits[n] = StyleTrait(declarations)
+}
+func (l *Limbo) Template(n string, opts ...func(*LimboTemplate) bool) {
+	t := LimboTemplate{
+		name: n,
+		rn:   l.rn.Structure("template \"%s\"", n),
+	}
+	for _, opt := range opts {
+		ok := opt(&t)
+		if !ok {
+			return
+		}
+	}
+	if t.content == nil {
+		t.rn.Error("template content should be specified")
+		return
+	}
+	sname := t.stylesheetName
+	if !(len(sname) > 0) {
+		t.rn.Error("template stylesheet should be specified")
+		return
+	}
+	_, exists := l.stylesheets[sname]
+	if !exists {
+		l.stylesheets[sname] = Stylesheet(make(map[string]TraitStyleRule))
+	}
+	l.templates = append(l.templates, t)
+	fmt.Printf("\nstylesheet added: %#v\nstylesheets: %#v\n", l.stylesheets[sname], l.stylesheets)
 	fmt.Printf("\ntemplate added %#v\n", l.templates[len(l.templates)-1])
 }
 
 // *Limbo.Universe() generates templating universe, which is the entity point to work with templates at the application runtime.
 func (l *Limbo) Universe() (u *Universe, r report.Node) {
-	r = l.reportCreator("universe")
+	r = l.rn
 	u = &Universe{
 		templates:     make(map[string]*Template),
 		reportCreator: l.reportCreator,
+		stylesheets:   map[string]string{},
 	}
 	// go through limbo template to prepare final (universe) templates
 	for _, lt := range l.templates {
@@ -391,6 +476,17 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 				fragments = appendFragments(
 					fragments,
 					fmt.Sprintf(" %s=\"%s\"", fragment.name, fragment.value))
+			case semClass:
+				fmt.Printf("\n\n\nsemClass fragment: %#v\n\n\n", fragment)
+				fragments = appendFragments(fragments, fmt.Sprintf(" class=\"%s\"", fragment.name))
+				s := l.stylesheets[lt.stylesheetName]
+				for _, tname := range fragment.traitNames {
+					s[tname] = append(s[tname], fragment.name)
+					// s.traitRules[tname] = r
+					fmt.Printf("\n\t\t\ttrait style rule: %#v\n", s[tname])
+				}
+				fmt.Printf("\n\n\t\t\tstylesheet: %#v\n", s)
+				fmt.Printf("\n\n\t\t\tstylesheets: %#v\n", l.stylesheets)
 			case attributeInjection:
 				fragments = appendFragments(
 					fragments,
@@ -437,6 +533,44 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 		t.fragments = fragments
 		u.templates[t.name] = t
 	}
+	fmt.Printf("\n\ttraits[ts]: %#v\n\tstylesheets: %s\n", l.traits, map[string]Stylesheet(l.stylesheets))
+	for n, stylesheet := range l.stylesheets {
+		sr := r.Structure("stylesheet \"%s\" generation", n)
+		var sb strings.Builder
+		fmt.Printf("\n\ntraitRules[tr]: %#v\n\n", map[string]TraitStyleRule(stylesheet))
+		// ordering traitrules by trait name
+		traitNames := []string{}
+		for tn := range map[string]TraitStyleRule(stylesheet) {
+			traitNames = append(traitNames, tn)
+		}
+		sort.Strings(traitNames)
+
+		for _, tn := range traitNames {
+			rule := stylesheet[tn]
+			sr.Info("trait generation \"%s\"", tn)
+			sb.WriteString("\n\n/* trait: ")
+			sb.WriteString(tn)
+			sb.WriteString(" */\n")
+			for i, selector := range rule {
+				sb.WriteRune('.')
+				sb.WriteString(selector)
+				if i < len(rule)-2 {
+					sb.WriteString(" ,")
+				}
+			}
+			sb.WriteString("{\n")
+			for _, declaration := range l.traits[tn] {
+				sb.WriteString(declaration[0])
+				sb.WriteString(": ")
+				sb.WriteString(strings.Join(declaration[1:], " "))
+				sb.WriteString(";\n")
+			}
+			sb.WriteString("}\n")
+		}
+		r.Info("stylesheet[ss] %s:\n\n %s", n, sb.String())
+		u.stylesheets[n] = sb.String()
+	}
+
 	return
 }
 
@@ -467,7 +601,6 @@ func appendFragments(fragments []interface{}, newRawFragments ...interface{}) []
 
 func (u *Universe) Render(n string, params map[string]interface{}) (string, report.Node) {
 	fmt.Printf("\n\n\n\nrendering template %s\n", n)
-
 	r := u.reportCreator("rendering template \"%s\"", n)
 	t, ok := u.templates[n]
 	if !ok {
@@ -624,6 +757,6 @@ traverseLoop:
 	}
 	return sb.String(), r
 }
-func (u *Universe) Stylesheets(n string) map[string]Stylesheet {
-	return nil
+func (u *Universe) Stylesheets() map[string]string {
+	return u.stylesheets
 }
