@@ -288,7 +288,6 @@ func newIteratorWithParamsSlice(path []int, label string, items []interface{}, p
 }
 func (iter *iterator) next() interface{} {
 	iter.cursor = iter.cursor + 1
-	fmt.Printf("\n\nnext(): %#v : %d/%d : %#v {all: %#v}\n\n", iter.path, iter.cursor, len(iter.items), iter.items[iter.cursor], iter.items)
 	if iter.cursor < len(iter.items) {
 		return iter.items[iter.cursor]
 	}
@@ -387,8 +386,6 @@ func (l *Limbo) Template(n string, opts ...func(*LimboTemplate) bool) {
 		l.stylesheets[sname] = Stylesheet(make(map[string]TraitStyleRule))
 	}
 	l.templates = append(l.templates, t)
-	fmt.Printf("\nstylesheet added: %#v\nstylesheets: %#v\n", l.stylesheets[sname], l.stylesheets)
-	fmt.Printf("\ntemplate added %#v\n", l.templates[len(l.templates)-1])
 }
 
 // *Limbo.Universe() generates templating universe, which is the entity point to work with templates at the application runtime.
@@ -401,7 +398,6 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 	}
 	// go through limbo template to prepare final (universe) templates
 	for _, lt := range l.templates {
-		fmt.Printf("\n>>>universe template preparation: %s, %#v\n", lt.name, lt.content)
 		if _, exists := u.templates[lt.name]; exists {
 			r.Error("template \"%s\" already specified", lt.name)
 			continue
@@ -439,7 +435,6 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			case doctype:
 				fragments = appendFragments(fragments, DOCTYPE)
 			case tag:
-				fmt.Printf("\ntag: %s,\n\tattrs: %#v\n\tcontent: %#v \n", fragment.name, fragment.attributesRule, fragment.contentRule)
 				fragments = appendFragments(fragments, fmt.Sprintf("<%s", fragment.name))
 				// for tag we flatten attributes and content rule into a single list of rules
 				// because of that tagAttributes and tagContent rules are ignored, but not their content.
@@ -458,7 +453,6 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 					rules = append(rules, tagClosing{fragment.name})
 				}
 				rules = append(rules, jump{iterator: iter}) // allows to jump to the parrent's sibling at the end
-				fmt.Printf("\t\trules: %#v", rules)
 				iter = newIterator(append(iter.path, iter.cursor), fmt.Sprintf("<%s>", fragment.name), rules)
 			case tagEnd:
 				fragments = appendFragments(fragments, ">")
@@ -469,24 +463,17 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			case TagAttributes: // not achievable if tagAttributes is within tagRule because of flattening
 				iter = newIterator(append(iter.path, iter.cursor), "attrs", []interface{}(fragment))
 			case TagContent: // not achievable if tagContent is within tagRule because of flattening
-				// iter = newIterator(append(iter.path, iter.cursor), "content", append([]interface{}(fragment), jump{iterator: iter}))
-				fmt.Printf("\n\tuniverse template prep2: %#v : %#v\n", fragment, iter)
 				iter = newIterator(append(iter.path, iter.cursor), "content", []interface{}(fragment))
 			case attribute:
 				fragments = appendFragments(
 					fragments,
 					fmt.Sprintf(" %s=\"%s\"", fragment.name, fragment.value))
 			case semClass:
-				fmt.Printf("\n\n\nsemClass fragment: %#v\n\n\n", fragment)
 				fragments = appendFragments(fragments, fmt.Sprintf(" class=\"%s\"", fragment.name))
 				s := l.stylesheets[lt.stylesheetName]
 				for _, tname := range fragment.traitNames {
 					s[tname] = append(s[tname], fragment.name)
-					// s.traitRules[tname] = r
-					fmt.Printf("\n\t\t\ttrait style rule: %#v\n", s[tname])
 				}
-				fmt.Printf("\n\n\t\t\tstylesheet: %#v\n", s)
-				fmt.Printf("\n\n\t\t\tstylesheets: %#v\n", l.stylesheets)
 			case attributeInjection:
 				fragments = appendFragments(
 					fragments,
@@ -529,22 +516,18 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			}
 		}
 		fragments = appendFragments(fragments, theEnd{})
-		fmt.Printf("\n\n\n::fragments: %#v", fragments)
 		t.fragments = fragments
 		u.templates[t.name] = t
 	}
-	fmt.Printf("\n\ttraits[ts]: %#v\n\tstylesheets: %s\n", l.traits, map[string]Stylesheet(l.stylesheets))
 	for n, stylesheet := range l.stylesheets {
 		sr := r.Structure("stylesheet \"%s\" generation", n)
 		var sb strings.Builder
-		fmt.Printf("\n\ntraitRules[tr]: %#v\n\n", map[string]TraitStyleRule(stylesheet))
 		// ordering traitrules by trait name
 		traitNames := []string{}
 		for tn := range map[string]TraitStyleRule(stylesheet) {
 			traitNames = append(traitNames, tn)
 		}
 		sort.Strings(traitNames)
-
 		for _, tn := range traitNames {
 			rule := stylesheet[tn]
 			sr.Info("trait generation \"%s\"", tn)
@@ -570,7 +553,6 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 		r.Info("stylesheet[ss] %s:\n\n %s", n, sb.String())
 		u.stylesheets[n] = sb.String()
 	}
-
 	return
 }
 
@@ -600,7 +582,6 @@ func appendFragments(fragments []interface{}, newRawFragments ...interface{}) []
 }
 
 func (u *Universe) Render(n string, params map[string]interface{}) (string, report.Node) {
-	fmt.Printf("\n\n\n\nrendering template %s\n", n)
 	r := u.reportCreator("rendering template \"%s\"", n)
 	t, ok := u.templates[n]
 	if !ok {
@@ -629,7 +610,6 @@ traverseLoop:
 					append(tPl.fragments[:len(tPl.fragments)-1], jump{iterator: iter}),
 					iter.getParams())
 			} else {
-				fmt.Printf("\n\t\t\tPARAMS: %s - %#v\n", f.name, iter.getParams()[f.key])
 				iter = newIteratorWithParamsMap(
 					append(iter.path, iter.cursor),
 					"template placement",
@@ -714,14 +694,11 @@ traverseLoop:
 				r.Error("repeatable params should be of type []map[string]interface{}")
 				return "", nil
 			}
-			fmt.Printf("\n\nrepeatable params: %#v\n", repParams)
 			rules := []interface{}{}
 			for range repParams {
 				rules = append(rules, f.rule)
 			}
 			rules = append(rules, jump{iterator: iter})
-			fmt.Printf("\n\nrepeatable rules: %#v\n", rules)
-
 			iter = newIteratorWithParamsSlice(
 				append(iter.path, iter.cursor),
 				"repeatable",
@@ -729,7 +706,6 @@ traverseLoop:
 				repParams)
 		case variant:
 			for k, n := range f.templates {
-				fmt.Printf("\b\t\t\t~~~variant params: %#v\n", iter.getParams())
 				if _, ok := iter.getParams()[k]; ok {
 					iter = newIteratorWithParamsMap(
 						append(iter.path, 0),
