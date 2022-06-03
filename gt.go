@@ -537,8 +537,8 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			for i, selector := range rule {
 				sb.WriteRune('.')
 				sb.WriteString(selector)
-				if i < len(rule)-2 {
-					sb.WriteString(" ,")
+				if i < len(rule)-1 {
+					sb.WriteString(", ")
 				}
 			}
 			sb.WriteString("{\n")
@@ -624,7 +624,7 @@ traverseLoop:
 			}
 			data, ok := _data.(map[string]interface{})
 			if !ok {
-				r.Error("wrong format of template injection \"%s\" data", f.key)
+				r.Error("wrong format of template injection \"%s\" data, expected map[string]interface{}, got: %#v", f.key, _data)
 				return "", r
 			}
 			_tn, ok := data["name"]
