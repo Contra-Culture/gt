@@ -10,10 +10,19 @@ import (
 
 type (
 	// styling
-	StyleTrait       []StyleDeclaration // represents one or several CSS declarations
-	StyleDeclaration []string           // represents a single CSS declaration
-	TraitStyleRule   []string           // represents a single CSS rule
+	StyleTrait struct {
+		normal StyleBlock
+		pseudo map[string]StyleBlock
+		name   string
+	}
+	TraitStyleRule struct {
+		trait     StyleTrait
+		selectors []string
+	}
 	Stylesheet       map[string]TraitStyleRule
+	StyleBlock       []StyleDeclaration // represents a single CSS declaration
+	StyleDeclaration []string           // represents a single CSS rule
+	//Stylesheet     map[string]TraitStyleRule
 	// limbo templating
 	LimboTemplate struct {
 		name           string
@@ -354,12 +363,47 @@ func WithStylesheet(n string) func(*LimboTemplate) bool {
 		return true
 	}
 }
-func (l *Limbo) Trait(n string, declarations ...StyleDeclaration) {
+func Normal(declarations ...StyleDeclaration) func(*StyleTrait) error {
+	return func(t *StyleTrait) error {
+		if len(t.normal) > 0 {
+			return fmt.Errorf("trait \"%s\" has already specified style declarations", t.name)
+		}
+		t.normal = declarations
+		fmt.Printf("\nstyle trait after normal %#v\n", t)
+		return nil
+	}
+}
+func Pseudo(name string, declarations ...StyleDeclaration) func(*StyleTrait) error {
+	return func(t *StyleTrait) error {
+		if t.pseudo[name] != nil {
+			return fmt.Errorf("trait \"%s\" has already specified :%s pseudo-class style declarations", t.name, name)
+		}
+		t.pseudo[name] = declarations
+		fmt.Printf("\nstyle trait after pseudo %#v\n", t)
+
+		return nil
+	}
+}
+func (l *Limbo) Trait(n string, opts ...func(t *StyleTrait) error) {
+	r := l.rn.Structure("trait \"%s\"", n)
 	if _, exists := l.traits[n]; exists {
-		l.rn.Error("trait \"%s\" already specified", n)
+		r.Error("trait \"%s\" already specified", n)
 		return
 	}
-	l.traits[n] = StyleTrait(declarations)
+	t := StyleTrait{
+		name:   n,
+		normal: StyleBlock{},
+		pseudo: map[string]StyleBlock{},
+	}
+	for _, o := range opts {
+		err := o(&t)
+		if err != nil {
+			r.Error(err.Error())
+			return
+		}
+	}
+	l.traits[n] = t
+	fmt.Printf("\nlimbo traits: %#v\n\nadded trait:%#v\n\n", l.traits, t)
 }
 func (l *Limbo) Template(n string, opts ...func(*LimboTemplate) bool) {
 	t := LimboTemplate{
@@ -383,7 +427,7 @@ func (l *Limbo) Template(n string, opts ...func(*LimboTemplate) bool) {
 	}
 	_, exists := l.stylesheets[sname]
 	if !exists {
-		l.stylesheets[sname] = Stylesheet(make(map[string]TraitStyleRule))
+		l.stylesheets[sname] = Stylesheet(map[string]TraitStyleRule{})
 	}
 	l.templates = append(l.templates, t)
 }
@@ -472,7 +516,15 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 				fragments = appendFragments(fragments, fmt.Sprintf(" class=\"%s\"", fragment.name))
 				s := l.stylesheets[lt.stylesheetName]
 				for _, tname := range fragment.traitNames {
-					s[tname] = append(s[tname], fragment.name)
+					tr, exists := s[tname]
+					if !exists {
+						tr = TraitStyleRule{
+							trait:     l.traits[tname],
+							selectors: []string{},
+						}
+					}
+					tr.selectors = append(tr.selectors, fragment.name)
+					s[tname] = tr
 				}
 			case attributeInjection:
 				fragments = appendFragments(
@@ -524,33 +576,68 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 		var sb strings.Builder
 		// ordering traitrules by trait name
 		traitNames := []string{}
-		for tn := range map[string]TraitStyleRule(stylesheet) {
+		for tn := range stylesheet {
 			traitNames = append(traitNames, tn)
 		}
 		sort.Strings(traitNames)
 		for _, tn := range traitNames {
 			rule := stylesheet[tn]
+			if len(rule.selectors) < 1 {
+				continue
+			}
 			sr.Info("trait generation \"%s\"", tn)
-			sb.WriteString("\n\n/* trait: ")
+			sb.WriteString("\n\n/* trait \"")
 			sb.WriteString(tn)
-			sb.WriteString(" */\n")
-			for i, selector := range rule {
+			sb.WriteString("\" */")
+			for i, selector := range rule.selectors {
 				sb.WriteRune('.')
 				sb.WriteString(selector)
-				if i < len(rule)-1 {
+				if i < len(rule.selectors)-1 {
 					sb.WriteString(", ")
 				}
 			}
 			sb.WriteString("{\n")
-			for _, declaration := range l.traits[tn] {
+			block := rule.trait.normal
+			for _, declaration := range block {
 				sb.WriteString(declaration[0])
 				sb.WriteString(": ")
 				sb.WriteString(strings.Join(declaration[1:], " "))
 				sb.WriteString(";\n")
 			}
 			sb.WriteString("}\n")
+			if len(rule.trait.pseudo) > 0 {
+				ordered := []string{}
+				for pc := range rule.trait.pseudo {
+					ordered = append(ordered, pc)
+				}
+				sort.Strings(ordered)
+				for _, pseudoClass := range ordered {
+					block := rule.trait.pseudo[pseudoClass]
+					sb.WriteString("\n\n/* trait \"")
+					sb.WriteString(tn)
+					sb.WriteString("\":")
+					sb.WriteString(pseudoClass)
+					sb.WriteString(" */\n")
+					for i, selector := range rule.selectors {
+						sb.WriteRune('.')
+						sb.WriteString(selector)
+						sb.WriteRune(':')
+						sb.WriteString(pseudoClass)
+						if i < len(rule.selectors)-1 {
+							sb.WriteString(", ")
+						}
+					}
+					sb.WriteString("{\n")
+					for _, declaration := range block {
+						sb.WriteString(declaration[0])
+						sb.WriteString(": ")
+						sb.WriteString(strings.Join(declaration[1:], " "))
+						sb.WriteString(";\n")
+					}
+					sb.WriteString("}\n")
+				}
+			}
 		}
-		r.Info("stylesheet[ss] %s:\n\n %s", n, sb.String())
 		u.stylesheets[n] = sb.String()
 	}
 	return
