@@ -735,7 +735,7 @@ traverseLoop:
 			}
 			injT, ok := u.templates[tn]
 			if !ok {
-				r.Error("template \"%s\" for injection doesn't exist", t.name)
+				r.Error("template \"%s\" for injection doesn't exist", tn)
 				return "", r
 			}
 			iter = newIteratorWithParamsMap(
