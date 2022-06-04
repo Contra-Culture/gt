@@ -369,7 +369,6 @@ func Normal(declarations ...StyleDeclaration) func(*StyleTrait) error {
 			return fmt.Errorf("trait \"%s\" has already specified style declarations", t.name)
 		}
 		t.normal = declarations
-		fmt.Printf("\nstyle trait after normal %#v\n", t)
 		return nil
 	}
 }
@@ -379,8 +378,6 @@ func Pseudo(name string, declarations ...StyleDeclaration) func(*StyleTrait) err
 			return fmt.Errorf("trait \"%s\" has already specified :%s pseudo-class style declarations", t.name, name)
 		}
 		t.pseudo[name] = declarations
-		fmt.Printf("\nstyle trait after pseudo %#v\n", t)
-
 		return nil
 	}
 }
@@ -403,7 +400,6 @@ func (l *Limbo) Trait(n string, opts ...func(t *StyleTrait) error) {
 		}
 	}
 	l.traits[n] = t
-	fmt.Printf("\nlimbo traits: %#v\n\nadded trait:%#v\n\n", l.traits, t)
 }
 func (l *Limbo) Template(n string, opts ...func(*LimboTemplate) bool) {
 	t := LimboTemplate{
