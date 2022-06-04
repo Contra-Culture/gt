@@ -484,9 +484,9 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 					rules = append(rules, fragment.attributesRule...)
 				}
 				if selfClosingTag(fragment.name) {
-					rules = append(rules, tagSelfClosing{})
+					rules = append(rules, tagSelfClosing{selfClosing: true})
 				} else {
-					rules = append(rules, tagEnd{})
+					rules = append(rules, tagEnd{tagEnd: true})
 					if len(fragment.contentRule) > 0 {
 						rules = append(rules, fragment.contentRule...)
 					}
