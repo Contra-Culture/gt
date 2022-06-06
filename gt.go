@@ -668,7 +668,7 @@ func (u *Universe) Render(n string, params map[string]interface{}) (string, repo
 	r := u.reportCreator("rendering template \"%s\"", n)
 	t, ok := u.templates[n]
 	if !ok {
-		r.Error("template not found")
+		r.Error("template \"%s\" not found", n)
 		return "", r
 	}
 	var sb strings.Builder
