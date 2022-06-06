@@ -769,7 +769,7 @@ traverseLoop:
 		case repeatable:
 			rawRepParams, ok := iter.getParams()[f.key]
 			if !ok {
-				r.Error("repeatable params are not provided")
+				r.Error("repeatable params \"%s\" are not provided", f.key)
 				return "", r
 			}
 			repParams, ok := rawRepParams.([]map[string]interface{})
