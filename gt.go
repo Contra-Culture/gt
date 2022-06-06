@@ -754,7 +754,7 @@ traverseLoop:
 		case textInjection:
 			_v, exists := iter.getParams()[f.key]
 			if !exists {
-				r.Error("text injection \"%s\" not provided", f.key)
+				r.Error("text injection \"%s\" not provided (params: %#v)", f.key, iter.getParams())
 				return "", r
 			}
 			v, ok := _v.(string)
