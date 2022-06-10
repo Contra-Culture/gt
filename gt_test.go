@@ -77,6 +77,7 @@ var _ = Describe("gt", func() {
 									TemplatePlacement("/card/article", Auto()),
 								),
 								TemplateInjection("bottom")))))))
+
 		limbo.Template(
 			"/card/article",
 			WithStylesheet("main"),
@@ -107,15 +108,18 @@ var _ = Describe("gt", func() {
 							Content(
 								TextInj("article-link-anchor"))),
 						Variant("/comments/empty", map[string]string{"top-comments": "/comments/top"})))))
+
 		limbo.Template(
 			"/comments/empty",
 			WithStylesheet("main"),
 			WithContent(Text("no comments")))
+
 		limbo.Template(
 			"/comments/top",
 			WithStylesheet("main"),
 			WithContent(
 				Repeat("comments", TemplatePlacement("/card/comment", Auto()))))
+
 		limbo.Template(
 			"/card/comment",
 			WithStylesheet("main"),
@@ -139,6 +143,7 @@ var _ = Describe("gt", func() {
 							),
 							Content(
 								TextInj("comment-text")))))))
+
 		limbo.Template(
 			"/btn/mailme",
 			WithStylesheet("main"),
