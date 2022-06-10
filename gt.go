@@ -691,7 +691,6 @@ traverseLoop:
 				return "", r
 			}
 			if f.key == auto { // when rendering within repeatable rule
-				fmt.Printf("\n\n# TPL FRAGMENTS: %#v\n\n", tPl)
 				iter = newIteratorWithParamsMap(
 					append(iter.path, iter.cursor),
 					"template placement",
