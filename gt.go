@@ -142,7 +142,7 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 		}
 	}
 	name := strings.Join(_ruleName, " ")
-	fmt.Printf("debug ruleTemplateNameAndSelectorGenerator: name %s", name)
+	fmt.Printf("\ndebug ruleTemplateNameAndSelectorGenerator: name %s\n", name)
 	selectorGenerator := func(injections map[string]string) (string, error) {
 		_selector := []string{}
 		for _, _f := range template {
@@ -158,7 +158,7 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 			}
 		}
 		selector := strings.Join(_selector, " ")
-		fmt.Printf("debug ruleTemplateNameAndSelectorGenerator: (%s) selector generator: %s", name, selector)
+		fmt.Printf("\ndebug ruleTemplateNameAndSelectorGenerator: (%s) selector generator: %s\n", name, selector)
 		return selector, nil
 	}
 	return name, selectorGenerator
@@ -201,13 +201,10 @@ func AttrInjection(name, key string) interface{} {
 const SELF_CLASS_PLACEMENT = "selfClass"
 
 func Class(name string, stylingTemplateName string, styleTemplateSelectorInjections map[string]string) interface{} {
-	if name[0] != '.' {
-		name = "." + name
-	}
 	if styleTemplateSelectorInjections == nil {
 		styleTemplateSelectorInjections = map[string]string{}
 	}
-	styleTemplateSelectorInjections[SELF_CLASS_PLACEMENT] = name
+	styleTemplateSelectorInjections[SELF_CLASS_PLACEMENT] = "." + name
 	return class{
 		name,
 		stylingTemplateName,
@@ -414,6 +411,7 @@ func CSSRule(selectors []string, block [][]string) func(*Stylesheet) {
 	sb.WriteString(strings.Join(selectors, ", "))
 	sb.WriteString(" {\n")
 	for _, declaration := range block {
+		sb.WriteString("\t")
 		sb.WriteString(declaration[0])
 		sb.WriteString(": ")
 		sb.WriteString(strings.Join(declaration[1:], ", "))
@@ -422,9 +420,9 @@ func CSSRule(selectors []string, block [][]string) func(*Stylesheet) {
 	sb.WriteString("}\n\n")
 	css := sb.String()
 	return func(s *Stylesheet) {
-		fmt.Printf("debug CSSRule before: %s", s.predefined)
+		fmt.Printf("\ndebug CSSRule before: %s\n", s.predefined)
 		s.predefined = s.predefined + css
-		fmt.Printf("debug CSSRule after: %s", s.predefined)
+		fmt.Printf("\ndebug CSSRule after: %s\n", s.predefined)
 	}
 }
 func Styling(name string, rules ...func(*StylingTemplate)) func(*Stylesheet) {
@@ -618,6 +616,7 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 	for n, stylesheet := range l.stylesheets {
 		sr := r.Structure("stylesheet \"%s\" generation", n)
 		var sb strings.Builder
+		fmt.Printf("\ndebug stylesheet (%s) predefined %s\n", n, stylesheet.predefined)
 		sb.WriteString(stylesheet.predefined)
 		// ordering styling template rules by styling template name
 		stylingTemplateNames := []string{}
