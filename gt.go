@@ -144,6 +144,7 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 		}
 	}
 	name := sb.String()
+	fmt.Printf("debug ruleTemplateNameAndSelectorGenerator: name %s", name)
 	selectorGenerator := func(injections map[string]string) (string, error) {
 		_selector := []string{}
 		for _, _f := range template {
@@ -158,7 +159,9 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 				_selector = append(_selector, inj)
 			}
 		}
-		return strings.Join(_selector, " "), nil
+		selector:=strings.Join(_selector, " ")
+		fmt.Printf("debug ruleTemplateNameAndSelectorGenerator: (%s) selector generator: %s", name, selector, " "))
+		return selector , nil
 	}
 	return name, selectorGenerator
 }
@@ -200,11 +203,11 @@ func AttrInjection(name, key string) interface{} {
 const SELF_CLASS_PLACEMENT = "selfClass"
 
 func Class(name string, stylingTemplateName string, styleTemplateSelectorInjections map[string]string) interface{} {
-	if styleTemplateSelectorInjections == nil {
-		styleTemplateSelectorInjections = map[string]string{}
-	}
 	if name[0] != '.' {
 		name = "." + name
+	}
+	if styleTemplateSelectorInjections == nil {
+		styleTemplateSelectorInjections = map[string]string{}
 	}
 	styleTemplateSelectorInjections[SELF_CLASS_PLACEMENT] = name
 	return class{
@@ -349,7 +352,6 @@ func New(rc func(string, ...interface{}) report.Node) *Limbo {
 		stylesheets:      make(map[string]Stylesheet),
 	}
 }
-
 func WithLayout(content ...interface{}) func(*LimboTemplate) bool {
 	return func(t *LimboTemplate) bool {
 		if t.content != nil {
@@ -422,7 +424,9 @@ func CSSRule(selectors []string, block [][]string) func(*Stylesheet) {
 	sb.WriteString("}\n\n")
 	css := sb.String()
 	return func(s *Stylesheet) {
+		fmt.Printf("debug CSSRule before: %s", s.predefined)
 		s.predefined = s.predefined + css
+		fmt.Printf("debug CSSRule after: %s", s.predefined)
 	}
 }
 func Styling(name string, rules ...func(*StylingTemplate)) func(*Stylesheet) {
@@ -511,7 +515,6 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 		traverse := true
 		for traverse {
 			rule := iter.next()
-			//fragments = appendFragments(fragments, rule)
 			switch fragment := rule.(type) {
 			case theEnd:
 				traverse = false // stops the loop because rules tree traversing is finished
