@@ -16,27 +16,28 @@ var _ = Describe("gt", func() {
 		Expect(err).NotTo(HaveOccurred())
 		limbo := New(report.ReportCreator(report.DumbTimer(now)))
 		Expect(limbo).NotTo(BeNil())
-		limbo.Trait(
-			"text/top-header",
-			Normal(
-				[]string{"color", "red"},
-				[]string{"font-family", "Helvetica Neue", "Helvetica", "Arial", "sans-serif"},
-				[]string{"font-weight", "600"}))
-		limbo.Trait(
-			"text/main",
-			Normal(
-				[]string{"color", "#000000"},
-				[]string{"font-size", "1em"},
-				[]string{"line-height", "1.6em"}))
-		limbo.Trait(
-			"block/header",
-			Normal(
-				[]string{"background", "#f5f6f7"},
-				[]string{"margin", "20px", "0", "20px", "0"},
-				[]string{"padding", "20px"}),
-			Pseudo(
-				"hover",
-				[]string{"background", "#e5e6e7"}))
+		limbo.Stylesheet(
+			"main",
+			CSSRule(
+				[]string{"*"},
+				[][]string{
+					{"margin", "0"},
+					{"padding", "0"},
+					{"font-size", "16px"}}),
+			Styling(
+				"layout/header",
+				StylingRule(
+					[]interface{}{SelectorInjection{Name: SELF_CLASS_PLACEMENT}},
+					[][]string{
+						{"border", "1px solid black"},
+						{"padding", "1rem"}}),
+				StylingRule(
+					[]interface{}{SelectorInjection{Name: SELF_CLASS_PLACEMENT}, "> h1"},
+					[][]string{
+						{"font-size", "2rem"},
+						{"font-weight", "600"},
+						{"color", "#454647"}}),
+			))
 
 		limbo.Template(
 			"/layout/test",
@@ -65,17 +66,15 @@ var _ = Describe("gt", func() {
 								Tag(
 									"header",
 									Attributes(
-										SemClass("top-header", UsesTraits("block/header"))),
+										Class("top-header", "layout/header", nil)),
 									Content(
 										Tag(
 											"h1",
-											Attributes(
-												SemClass("top-header-title", UsesTraits("text/top-header"))),
+											Attributes(),
 											Content(Text("Test Header!"))))),
 								Repeat(
 									"articles",
-									TemplatePlacement("/card/article", Auto()),
-								),
+									TemplatePlacement("/card/article", Auto())),
 								TemplateInjection("bottom")))))))
 
 		limbo.Template(
@@ -85,8 +84,7 @@ var _ = Describe("gt", func() {
 				Tag(
 					"div",
 					Attributes(
-						Attr("class", "article-card"),
-					),
+						Attr("class", "article-card")),
 					Content(
 						Tag(
 							"h1",
@@ -157,13 +155,13 @@ var _ = Describe("gt", func() {
 					Content(TextInj("mailme-text")))))
 		// creates universe
 		univ, r := limbo.Universe()
-		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000001Z] limbo\n\t#[2022-05-02T10:11:12.0000002Z] trait \"text/top-header\"\n\t#[2022-05-02T10:11:12.0000003Z] trait \"text/main\"\n\t#[2022-05-02T10:11:12.0000004Z] trait \"block/header\"\n\t#[2022-05-02T10:11:12.0000005Z] template \"/layout/test\"\n\t#[2022-05-02T10:11:12.0000006Z] template \"/card/article\"\n\t#[2022-05-02T10:11:12.0000007Z] template \"/comments/empty\"\n\t#[2022-05-02T10:11:12.0000008Z] template \"/comments/top\"\n\t#[2022-05-02T10:11:12.0000009Z] template \"/card/comment\"\n\t#[2022-05-02T10:11:12.000001Z] template \"/btn/mailme\"\n\t#[2022-05-02T10:11:12.0000011Z] stylesheet \"main\" generation\n\t\t<info>[2022-05-02T10:11:12.0000012Z] trait generation \"block/header\"\n\t\t<info>[2022-05-02T10:11:12.0000013Z] trait generation \"text/top-header\"\n"))
+		Expect(report.ToString(r)).To(Equal("#[2022-05-02T10:11:12.0000001Z] limbo\n\t#[2022-05-02T10:11:12.0000002Z] stylesheet \"main\"\n\t#[2022-05-02T10:11:12.0000003Z] template \"/layout/test\"\n\t#[2022-05-02T10:11:12.0000004Z] template \"/card/article\"\n\t#[2022-05-02T10:11:12.0000005Z] template \"/comments/empty\"\n\t#[2022-05-02T10:11:12.0000006Z] template \"/comments/top\"\n\t#[2022-05-02T10:11:12.0000007Z] template \"/card/comment\"\n\t#[2022-05-02T10:11:12.0000008Z] template \"/btn/mailme\"\n\t#[2022-05-02T10:11:12.0000009Z] stylesheet \"main\" generation\n\t\t<info>[2022-05-02T10:11:12.000001Z] styling template rule generation \"layout/header\"\n"))
 
 		Expect(r.HasErrors()).To(BeFalse())
 		Expect(univ).NotTo(BeNil())
 		Expect(univ.Stylesheets()).NotTo(BeNil())
 		Expect(len(univ.Stylesheets())).To(Equal(1))
-		Expect(univ.Stylesheets()["main"]).To(Equal("\n\n/* trait \"block/header\" */.top-header{\nbackground: #f5f6f7;\nmargin: 20px 0 20px 0;\npadding: 20px;\n}\n\n\n/* trait \"block/header\":hover */\n.top-header:hover{\nbackground: #e5e6e7;\n}\n\n\n/* trait \"text/top-header\" */.top-header-title{\ncolor: red;\nfont-family: Helvetica Neue Helvetica Arial sans-serif;\nfont-weight: 600;\n}\n"))
+		Expect(univ.Stylesheets()["main"]).To(Equal(""))
 		rendered, r := univ.Render(
 			"/layout/test",
 			map[string]interface{}{

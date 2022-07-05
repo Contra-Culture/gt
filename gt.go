@@ -10,19 +10,24 @@ import (
 
 type (
 	// styling
-	StyleTrait struct {
-		normal StyleBlock
-		pseudo map[string]StyleBlock
-		name   string
+	SelectorInjection struct {
+		Name string
 	}
-	TraitStyleRule struct {
-		trait     StyleTrait
-		selectors []string
+	StylingTemplate struct {
+		selectorGenerators map[string]func(map[string]string) (string, error) // rule template name -> selector generator
+		blocks             map[string]StyleBlock                              // rule template name ->  block of rule's style declarations
+		name               string
 	}
-	Stylesheet       map[string]TraitStyleRule
-	StyleBlock       []StyleDeclaration // represents a single CSS declaration
-	StyleDeclaration []string           // represents a single CSS rule
-	//Stylesheet     map[string]TraitStyleRule
+	StylingTemplateRule struct {
+		stylingTemplate StylingTemplate
+		selectors       map[string][]string // rule template name -> selectors
+	}
+	Stylesheet struct {
+		rn                   report.Node
+		stylingTemplateRules map[string]StylingTemplateRule
+		predefined           string
+	}
+	StyleBlock [][]string // represents a multiple CSS declarations,
 	// limbo templating
 	LimboTemplate struct {
 		name           string
@@ -31,11 +36,11 @@ type (
 		rn             report.Node
 	}
 	Limbo struct {
-		reportCreator func(string, ...interface{}) report.Node
-		rn            report.Node
-		templates     []LimboTemplate
-		stylesheets   map[string]Stylesheet
-		traits        map[string]StyleTrait
+		reportCreator    func(string, ...interface{}) report.Node
+		rn               report.Node
+		templates        []LimboTemplate
+		stylesheets      map[string]Stylesheet
+		stylingTemplates map[string]StylingTemplate
 	}
 	// universe templating
 	Universe struct {
@@ -57,7 +62,6 @@ type (
 		paramsType string      // only for rendering,
 		params     interface{} // []map[string]interface{} or map[string]interface{} // only for rendering,
 	}
-
 	// rules
 	doctype   string   // allows to place HTML5 doctype: <!DOCTYPE html>
 	attribute struct { // allows to place attribute, works only as a child of tagAttributes rule
@@ -104,12 +108,10 @@ type (
 		key  string
 		rule interface{}
 	}
-	semClass struct {
-		name       string              // class base name
-		prefixed   bool                // if true - uses parent class name as a prefix with "-" separator
-		traitNames []string            // list of traits for the semantic class
-		modifiers  map[string][]string // modifier name -> trait names list
-
+	class struct {
+		name                              string // class base name
+		stylingTemplateName               string
+		stylingTemplateSelectorInjections map[string]string
 	}
 	variant struct { // allows to place one or another of the predefined variants, for example: text or tag, depending on the key provided by params object on template rendering
 		defaultTemplateName string // use __default key to provide data to the default rule. default rule is mandatory, but you can avoid rendering of anything with nothing rule.
@@ -128,6 +130,38 @@ type (
 
 const auto = "__auto__"
 
+// returns rule template name and selector generator for that rule template
+func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(map[string]string) (string, error)) {
+	var sb strings.Builder
+	for _, _f := range template {
+		switch f := _f.(type) {
+		case string:
+			sb.WriteString(f)
+		case SelectorInjection:
+			sb.WriteString("{{")
+			sb.WriteString(f.Name)
+			sb.WriteString("}}")
+		}
+	}
+	name := sb.String()
+	selectorGenerator := func(injections map[string]string) (string, error) {
+		_selector := []string{}
+		for _, _f := range template {
+			switch f := _f.(type) {
+			case string:
+				_selector = append(_selector, f)
+			case SelectorInjection:
+				inj, exists := injections[f.Name]
+				if !exists {
+					return "", fmt.Errorf("selector injection \"%s\" not provided", f.Name)
+				}
+				_selector = append(_selector, inj)
+			}
+		}
+		return strings.Join(_selector, " "), nil
+	}
+	return name, selectorGenerator
+}
 func Auto() string { // is for templates that have no key for params, but the params will be passed automatically (with Repeat() for example)
 	return auto
 }
@@ -156,35 +190,28 @@ func Attr(n, v string) interface{} {
 		value: v,
 	}
 }
-func AttrInjection(n, k string) interface{} {
+func AttrInjection(name, key string) interface{} {
 	return attributeInjection{
-		name: n,
-		key:  k,
+		name,
+		key,
 	}
 }
-func WithModifier(name string, traits ...string) func(*semClass) {
-	return func(sc *semClass) {
-		sc.modifiers[name] = traits
+
+const SELF_CLASS_PLACEMENT = "selfClass"
+
+func Class(name string, stylingTemplateName string, styleTemplateSelectorInjections map[string]string) interface{} {
+	if styleTemplateSelectorInjections == nil {
+		styleTemplateSelectorInjections = map[string]string{}
 	}
-}
-func UsesTraits(traitNames ...string) func(*semClass) {
-	return func(sc *semClass) {
-		sc.traitNames = append(sc.traitNames, traitNames...)
+	if name[0] != '.' {
+		name = "." + name
 	}
-}
-func Prefixed() func(*semClass) {
-	return func(sc *semClass) {
-		sc.prefixed = true
+	styleTemplateSelectorInjections[SELF_CLASS_PLACEMENT] = name
+	return class{
+		name,
+		stylingTemplateName,
+		styleTemplateSelectorInjections,
 	}
-}
-func SemClass(n string, opts ...func(*semClass)) interface{} {
-	sc := semClass{
-		name: n,
-	}
-	for _, opt := range opts {
-		opt(&sc)
-	}
-	return sc
 }
 func Text(t string) interface{} {
 	return text{
@@ -234,7 +261,7 @@ func Variant(dr string, variants map[string]string) interface{} {
 	}
 }
 func Nothing() interface{} {
-	return nothing{}
+	return nothing{nothing: true}
 }
 
 // void elements
@@ -316,10 +343,10 @@ func (iter *iterator) getParams() map[string]interface{} {
 // New() creates new Limbo object for dirty templates spec.
 func New(rc func(string, ...interface{}) report.Node) *Limbo {
 	return &Limbo{
-		reportCreator: rc,
-		rn:            rc("limbo"),
-		traits:        make(map[string]StyleTrait),
-		stylesheets:   make(map[string]Stylesheet),
+		reportCreator:    rc,
+		rn:               rc("limbo"),
+		stylingTemplates: make(map[string]StylingTemplate),
+		stylesheets:      make(map[string]Stylesheet),
 	}
 }
 
@@ -363,43 +390,60 @@ func WithStylesheet(n string) func(*LimboTemplate) bool {
 		return true
 	}
 }
-func Normal(declarations ...StyleDeclaration) func(*StyleTrait) error {
-	return func(t *StyleTrait) error {
-		if len(t.normal) > 0 {
-			return fmt.Errorf("trait \"%s\" has already specified style declarations", t.name)
-		}
-		t.normal = declarations
-		return nil
+func StylingRule(selectorTemplate []interface{}, block [][]string) func(*StylingTemplate) {
+	return func(styleTemplate *StylingTemplate) {
+		ruleTemplateName, selectorGenerator := ruleTemplateNameAndSelectorGenerator(selectorTemplate)
+		styleTemplate.selectorGenerators[ruleTemplateName] = selectorGenerator
+		styleTemplate.blocks[ruleTemplateName] = block
 	}
 }
-func Pseudo(name string, declarations ...StyleDeclaration) func(*StyleTrait) error {
-	return func(t *StyleTrait) error {
-		if t.pseudo[name] != nil {
-			return fmt.Errorf("trait \"%s\" has already specified :%s pseudo-class style declarations", t.name, name)
-		}
-		t.pseudo[name] = declarations
-		return nil
+
+// Defines a stylesheet
+func (l *Limbo) Stylesheet(name string, opts ...func(*Stylesheet)) {
+	s := Stylesheet{
+		rn:                   l.rn.Structure("stylesheet \"%s\"", name),
+		stylingTemplateRules: map[string]StylingTemplateRule{},
+	}
+	l.stylesheets[name] = s
+	for _, opt := range opts {
+		opt(&s)
 	}
 }
-func (l *Limbo) Trait(n string, opts ...func(t *StyleTrait) error) {
-	r := l.rn.Structure("trait \"%s\"", n)
-	if _, exists := l.traits[n]; exists {
-		r.Error("trait \"%s\" already specified", n)
-		return
+func CSSRule(selectors []string, block [][]string) func(*Stylesheet) {
+	var sb strings.Builder
+	sb.WriteString(strings.Join(selectors, ", "))
+	sb.WriteString(" {\n")
+	for _, declaration := range block {
+		sb.WriteString(declaration[0])
+		sb.WriteString(": ")
+		sb.WriteString(strings.Join(declaration[1:], ", "))
+		sb.WriteString(";\n")
 	}
-	t := StyleTrait{
-		name:   n,
-		normal: StyleBlock{},
-		pseudo: map[string]StyleBlock{},
+	sb.WriteString("}\n\n")
+	css := sb.String()
+	return func(s *Stylesheet) {
+		s.predefined = s.predefined + css
 	}
-	for _, o := range opts {
-		err := o(&t)
-		if err != nil {
-			r.Error(err.Error())
+}
+func Styling(name string, rules ...func(*StylingTemplate)) func(*Stylesheet) {
+	t := StylingTemplate{
+		name:               name,
+		selectorGenerators: map[string]func(map[string]string) (string, error){},
+		blocks:             map[string]StyleBlock{},
+	}
+	for _, rule := range rules {
+		rule(&t)
+	}
+	return func(s *Stylesheet) {
+		if _, exists := s.stylingTemplateRules[name]; exists {
+			s.rn.Error("styling template \"%s\" already exists", name)
 			return
 		}
+		s.stylingTemplateRules[name] = StylingTemplateRule{
+			stylingTemplate: t,
+			selectors:       map[string][]string{},
+		}
 	}
-	l.traits[n] = t
 }
 func (l *Limbo) Template(n string, opts ...func(*LimboTemplate) bool) {
 	t := LimboTemplate{
@@ -423,7 +467,9 @@ func (l *Limbo) Template(n string, opts ...func(*LimboTemplate) bool) {
 	}
 	_, exists := l.stylesheets[sname]
 	if !exists {
-		l.stylesheets[sname] = Stylesheet(map[string]TraitStyleRule{})
+		l.stylesheets[sname] = Stylesheet{
+			stylingTemplateRules: map[string]StylingTemplateRule{},
+		}
 	}
 	l.templates = append(l.templates, t)
 }
@@ -508,19 +554,20 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 				fragments = appendFragments(
 					fragments,
 					fmt.Sprintf(" %s=\"%s\"", fragment.name, fragment.value))
-			case semClass:
+			case class:
 				fragments = appendFragments(fragments, fmt.Sprintf(" class=\"%s\"", fragment.name))
 				s := l.stylesheets[lt.stylesheetName]
-				for _, tname := range fragment.traitNames {
-					tr, exists := s[tname]
-					if !exists {
-						tr = TraitStyleRule{
-							trait:     l.traits[tname],
-							selectors: []string{},
-						}
+				stylingTemplateRule, exists := s.stylingTemplateRules[fragment.stylingTemplateName]
+				if !exists {
+					r.Error("styling template \"%s\" does not exist", fragment.stylingTemplateName)
+					return
+				}
+				for ruleTemplateName, selectorGenerator := range stylingTemplateRule.stylingTemplate.selectorGenerators {
+					selector, err := selectorGenerator(fragment.stylingTemplateSelectorInjections)
+					if err != nil {
+						r.Error(err.Error())
 					}
-					tr.selectors = append(tr.selectors, fragment.name)
-					s[tname] = tr
+					stylingTemplateRule.selectors[ruleTemplateName] = append(stylingTemplateRule.selectors[ruleTemplateName], selector)
 				}
 			case attributeInjection:
 				fragments = appendFragments(
@@ -570,68 +617,38 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 	for n, stylesheet := range l.stylesheets {
 		sr := r.Structure("stylesheet \"%s\" generation", n)
 		var sb strings.Builder
-		// ordering traitrules by trait name
-		traitNames := []string{}
-		for tn := range stylesheet {
-			traitNames = append(traitNames, tn)
+		sb.WriteString(stylesheet.predefined)
+		// ordering styling template rules by styling template name
+		stylingTemplateNames := []string{}
+		for stylingTemplateName := range stylesheet.stylingTemplateRules {
+			stylingTemplateNames = append(stylingTemplateNames, stylingTemplateName)
 		}
-		sort.Strings(traitNames)
-		for _, tn := range traitNames {
-			rule := stylesheet[tn]
-			if len(rule.selectors) < 1 {
+		sort.Strings(stylingTemplateNames)
+		for _, stylingTemplateName := range stylingTemplateNames {
+			stylingTemplateRule := stylesheet.stylingTemplateRules[stylingTemplateName]
+			if len(stylingTemplateRule.selectors) < 1 {
+				r.Warn("styling template \"has no use cases\"", stylingTemplateName)
 				continue
 			}
-			sr.Info("trait generation \"%s\"", tn)
-			sb.WriteString("\n\n/* trait \"")
-			sb.WriteString(tn)
-			sb.WriteString("\" */")
-			for i, selector := range rule.selectors {
-				sb.WriteRune('.')
-				sb.WriteString(selector)
-				if i < len(rule.selectors)-1 {
-					sb.WriteString(", ")
+			sr.Info("styling template rule generation \"%s\"", stylingTemplateName)
+			sb.WriteString("\n\n/* styling Template \"")
+			sb.WriteString(stylingTemplateName)
+			sb.WriteString("\" */\n")
+			for ruleTemplateName, selectors := range stylingTemplateRule.selectors {
+				sb.WriteString("/*   rule:")
+				sb.WriteString(ruleTemplateName)
+				sb.WriteString(" */\n")
+				sb.WriteString(strings.Join(selectors, ", "))
+				sb.WriteString(" {\n")
+				block := stylingTemplateRule.stylingTemplate.blocks[ruleTemplateName]
+				for _, declaration := range block {
+					sb.WriteRune('\t')
+					sb.WriteString(declaration[0])
+					sb.WriteString(": ")
+					sb.WriteString(strings.Join(declaration[1:], ", "))
+					sb.WriteString(";\n")
 				}
-			}
-			sb.WriteString("{\n")
-			block := rule.trait.normal
-			for _, declaration := range block {
-				sb.WriteString(declaration[0])
-				sb.WriteString(": ")
-				sb.WriteString(strings.Join(declaration[1:], " "))
-				sb.WriteString(";\n")
-			}
-			sb.WriteString("}\n")
-			if len(rule.trait.pseudo) > 0 {
-				ordered := []string{}
-				for pc := range rule.trait.pseudo {
-					ordered = append(ordered, pc)
-				}
-				sort.Strings(ordered)
-				for _, pseudoClass := range ordered {
-					block := rule.trait.pseudo[pseudoClass]
-					sb.WriteString("\n\n/* trait \"")
-					sb.WriteString(tn)
-					sb.WriteString("\":")
-					sb.WriteString(pseudoClass)
-					sb.WriteString(" */\n")
-					for i, selector := range rule.selectors {
-						sb.WriteRune('.')
-						sb.WriteString(selector)
-						sb.WriteRune(':')
-						sb.WriteString(pseudoClass)
-						if i < len(rule.selectors)-1 {
-							sb.WriteString(", ")
-						}
-					}
-					sb.WriteString("{\n")
-					for _, declaration := range block {
-						sb.WriteString(declaration[0])
-						sb.WriteString(": ")
-						sb.WriteString(strings.Join(declaration[1:], " "))
-						sb.WriteString(";\n")
-					}
-					sb.WriteString("}\n")
-				}
+				sb.WriteString("}\n")
 			}
 		}
 		u.stylesheets[n] = sb.String()
