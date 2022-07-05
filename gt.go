@@ -132,18 +132,16 @@ const auto = "__auto__"
 
 // returns rule template name and selector generator for that rule template
 func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(map[string]string) (string, error)) {
-	var sb strings.Builder
+	_ruleName := []string{}
 	for _, _f := range template {
 		switch f := _f.(type) {
 		case string:
-			sb.WriteString(f)
+			_ruleName = append(_ruleName, f)
 		case SelectorInjection:
-			sb.WriteString("{{")
-			sb.WriteString(f.Name)
-			sb.WriteString("}}")
+			_ruleName = append(_ruleName, fmt.Sprintf("{{%s}}", f.Name))
 		}
 	}
-	name := sb.String()
+	name := strings.Join(_ruleName, " ")
 	fmt.Printf("debug ruleTemplateNameAndSelectorGenerator: name %s", name)
 	selectorGenerator := func(injections map[string]string) (string, error) {
 		_selector := []string{}
@@ -159,9 +157,9 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 				_selector = append(_selector, inj)
 			}
 		}
-		selector:=strings.Join(_selector, " ")
-		fmt.Printf("debug ruleTemplateNameAndSelectorGenerator: (%s) selector generator: %s", name, selector, " "))
-		return selector , nil
+		selector := strings.Join(_selector, " ")
+		fmt.Printf("debug ruleTemplateNameAndSelectorGenerator: (%s) selector generator: %s", name, selector)
+		return selector, nil
 	}
 	return name, selectorGenerator
 }
@@ -638,7 +636,7 @@ func (l *Limbo) Universe() (u *Universe, r report.Node) {
 			sb.WriteString(stylingTemplateName)
 			sb.WriteString("\" */\n")
 			for ruleTemplateName, selectors := range stylingTemplateRule.selectors {
-				sb.WriteString("/*   rule:")
+				sb.WriteString("/*   rule: ")
 				sb.WriteString(ruleTemplateName)
 				sb.WriteString(" */\n")
 				sb.WriteString(strings.Join(selectors, ", "))

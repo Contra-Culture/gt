@@ -161,7 +161,7 @@ var _ = Describe("gt", func() {
 		Expect(univ).NotTo(BeNil())
 		Expect(univ.Stylesheets()).NotTo(BeNil())
 		Expect(len(univ.Stylesheets())).To(Equal(1))
-		Expect(univ.Stylesheets()["main"]).To(Equal(""))
+		Expect(univ.Stylesheets()["main"]).To(Equal("\n\n/* styling Template \"layout/header\" */\n/*   rule: {{selfClass}} */\n.top-header {\n\tborder: 1px solid black;\n\tpadding: 1rem;\n}\n/*   rule: {{selfClass}} > h1 */\n.top-header > h1 {\n\tfont-size: 2rem;\n\tfont-weight: 600;\n\tcolor: #454647;\n}\n"))
 		rendered, r := univ.Render(
 			"/layout/test",
 			map[string]interface{}{
