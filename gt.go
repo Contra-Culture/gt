@@ -383,6 +383,9 @@ func WithAttributes(attrs ...interface{}) func(*LimboTemplate) bool {
 		return true
 	}
 }
+func Itself() SelectorInjection {
+	return SelectorInjection{Name: SELF_CLASS_PLACEMENT}
+}
 func WithStylesheet(n string) func(*LimboTemplate) bool {
 	return func(t *LimboTemplate) bool {
 		if len(t.stylesheetName) > 0 {
