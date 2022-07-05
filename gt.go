@@ -205,11 +205,13 @@ func Class(name string, stylingTemplateName string, styleTemplateSelectorInjecti
 		styleTemplateSelectorInjections = map[string]string{}
 	}
 	styleTemplateSelectorInjections[SELF_CLASS_PLACEMENT] = "." + name
-	return class{
+	c := class{
 		name,
 		stylingTemplateName,
 		styleTemplateSelectorInjections,
 	}
+	fmt.Printf("\ndebug Class(): %#v\n", c)
+	return c
 }
 func Text(t string) interface{} {
 	return text{
