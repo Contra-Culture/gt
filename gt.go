@@ -410,9 +410,14 @@ func (l *Limbo) Stylesheet(name string, opts ...func(*Stylesheet)) {
 		rn:                   l.rn.Structure("stylesheet \"%s\"", name),
 		stylingTemplateRules: map[string]StylingTemplateRule{},
 	}
-	l.stylesheets[name] = s
 	for _, opt := range opts {
 		opt(&s)
+	}
+	l.stylesheets[name] = s
+}
+func CSSComment(c string) func(*Stylesheet) {
+	return func(s *Stylesheet) {
+		s.predefined = s.predefined + fmt.Sprintf("\n/* %s */", c)
 	}
 }
 func CSSRule(selectors []string, block [][]string) func(*Stylesheet) {
