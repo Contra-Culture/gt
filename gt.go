@@ -142,8 +142,9 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 		}
 	}
 	name := strings.Join(_ruleName, " ")
-	fmt.Printf("\ndebug ruleTemplateNameAndSelectorGenerator: name %s | template: #%v\n", name, template)
 	selectorGenerator := func(injections map[string]string) (string, error) {
+		fmt.Printf("\ndebug ruleTemplateNameAndSelectorGenerator: name %s | template: #%v\n", name, template)
+
 		_selector := []string{}
 		for _, _f := range template {
 			switch f := _f.(type) {
