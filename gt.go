@@ -148,9 +148,11 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 		for _, _f := range template {
 			switch f := _f.(type) {
 			case string:
-				fmt.Printf("\ndebug ruleTemplateNameAndSelectorGenerator: name %s | template-fragment: %#v\n", name, f)
+				fmt.Printf("\ndebug ruleTemplateNameAndSelectorGenerator: name %s | template-fragment(string): %#v | injections: %#v\n", name, f, injections)
 				_selector = append(_selector, f)
 			case SelectorInjection:
+				fmt.Printf("\ndebug ruleTemplateNameAndSelectorGenerator: name %s | template-fragment(inj): %#v | injections: %#v\n", name, f, injections)
+
 				inj, exists := injections[f.Name]
 				if !exists {
 					return "", fmt.Errorf("selector injection \"%s\" not provided", f.Name)
