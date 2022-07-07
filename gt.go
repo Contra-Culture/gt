@@ -155,7 +155,6 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 				}
 				_selector.WriteRune(' ')
 				_selector.WriteString(inj)
-				_selector.WriteRune(' ')
 			}
 		}
 		selector := _selector.String()
