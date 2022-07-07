@@ -143,20 +143,22 @@ func ruleTemplateNameAndSelectorGenerator(template []interface{}) (string, func(
 	}
 	name := strings.Join(_ruleName, " ")
 	selectorGenerator := func(injections map[string]string) (string, error) {
-		_selector := []string{}
+		var _selector strings.Builder
 		for _, _f := range template {
 			switch f := _f.(type) {
 			case string:
-				_selector = append(_selector, f)
+				_selector.WriteString(f)
 			case SelectorInjection:
 				inj, exists := injections[f.Name]
 				if !exists {
 					return "", fmt.Errorf("selector injection \"%s\" not provided", f.Name)
 				}
-				_selector = append(_selector, inj)
+				_selector.WriteRune(' ')
+				_selector.WriteString(inj)
+				_selector.WriteRune(' ')
 			}
 		}
-		selector := strings.Join(_selector, " ")
+		selector := _selector.String()
 		return selector, nil
 	}
 	return name, selectorGenerator
